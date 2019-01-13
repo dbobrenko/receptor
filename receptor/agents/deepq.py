@@ -10,13 +10,11 @@ from torch.autograd import Variable
 from receptor.agents.agent import BaseAgent
 from receptor.core import losses
 from receptor.core.policy import GreedyPolicy
-from receptor.utils import torch_utils
+from receptor.utils import utils, torch_utils
 
 
 class DeepQ(BaseAgent):
-    def __init__(self, env, net, restore_from=None, use_double=False, trainable_net=None,
-                 device='cuda:0', optimizer=None, policy=None, targetfreq=40000,
-                 target_net=None, saver_keep=3, name='DeepQ'):
+    def __init__(self, net, device='cuda:0', logdir='', name='', *args, **kwargs):
         """Constructs Deep Q-Learning agent.
          Includes the following implementations:
             1. Human-level control through deep reinforcement learning, Mnih et al., 2015.
@@ -29,24 +27,10 @@ class DeepQ(BaseAgent):
 
         See `core.BaseDeepQ`.
         Args:
-            env (gym.Env): Environment instance.
             net (models.AbstractFactory): Network factory.
-            use_double (bool): Enables Double DQN.
-            restore_from (str): Path to the pre-trained model.
             device (str): TensorFlow device, used for graph creation.
-            optimizer (Optimizer or dict): Agent's optimizer.
-                By default: RMSProp(lr=2.5e-4, momentum=0.95).
-            targetfreq (int): Target network update frequency(in seen observations).
-                Network architecture must be exactly the same as provided for this agent.
-                If provided, current agent weights will remain constant.
-                Pass None, to optimize current agent network.
-            target_net (Network): Custom target network. Disables target sync.
-                Pass None, to use agent's target network.
-            saver_keep (int): Maximum number of checkpoints can be stored at once.
         """
-        super(DeepQ, self).__init__(env=env, net=net, device=device,
-                                    saver_keep=saver_keep, name=name)
-
+        super(DeepQ, self).__init__(net=net, device=device, name=name, saver_keep=saver_keep)
         self.use_double = use_double
         self._target_freq = targetfreq
         self.policy = policy
@@ -87,17 +71,11 @@ class DeepQ(BaseAgent):
             return self.net(obs_batch)['Q']
 
     def act(self, obs):
-        return self.act_on_batch([obs])
-
-    def explore(self, obs):
-        return self.explore_on_batch([obs])
-
-    def act_on_batch(self, obs):
         """Computes action with greedy policy for given observation."""
-        action_values = self.predict_on_batch(obs)
+        action_values = self.predict_on_batch([obs])
         return GreedyPolicy.select_action(self.env, action_values.data.cpu().numpy())
 
-    def explore_on_batch(self, obs):
+    def explore(self, obs):
         action_values = self.predict_on_batch([obs])
         return self.policy.select_action(self.env, action_values.data.cpu().numpy(),
                                          step=self.obs_step)
@@ -110,34 +88,50 @@ class DeepQ(BaseAgent):
         """Syncs target network with behaviour network."""
         self.target_net.load_state_dict(self.trainable_net.state_dict())
 
-    def train_on_batch(self, rollout, lr=None, additional_losses=(), summarize=False, gamma=0.99):
+    def train_on_batch(self, obs, actions, rewards, term, obs_next, traj_ends,
+                       lr=None, gamma=0.99, aux_losses=(), summarize=False, importance=None):
         with self.train_step.get_lock():
             if self.train_step.value == self._target_freq:
                 self.sync_target_network()
             self.train_step.value += 1
         with self.obs_step.get_lock():
-            self.obs_step.value += len(rollout.obs)
+            self.obs_step.value += len(obs)
         with self.episode_step.get_lock():
-            self.episode_step.value += sum(rollout.terms)
+            self.episode_step.value += sum(term)
         torch_utils.set_lr(self.opt, lr)
-        rollout.compile()
+
+        obs = Variable(torch.from_numpy(np.asarray(obs, dtype='f'))).to(self.device)
+        actions = Variable(torch.from_numpy(np.asarray(actions, dtype='f'))).to(self.device)
+        obs_next = Variable(torch.from_numpy(np.asarray(obs_next, dtype='f'))).to(self.device)
+        importance = Variable(torch.from_numpy(np.asarray(importance, dtype='f'))).to(self.device)
+        if importance is not None:
+            importance = Variable(
+                torch.from_numpy(np.asarray(importance, dtype='f'))).to(self.device)
+        terms = torch.from_numpy(np.asarray(term, dtype='uint8'))
+        rewards = torch.from_numpy(np.asarray(rewards, dtype='f'))
+        traj_ends = torch.from_numpy(np.asarray(traj_ends, dtype='uint8'))
+
         with torch.no_grad():
             if self.use_double:
-                q_idx = self.net(rollout.obs_next)['Q'].max(1)[1]
-                q_next = self.target_net(rollout.obs_next)['Q']
+                q_idx = self.net(obs_next)['Q'].max(1)[1]
+                q_next = self.target_net(obs_next)['Q']
                 q_next_max = torch.where(q_idx.to(torch.uint8), q_next[:, 1], q_next[:, 0])
             else:
-                q_next_max = self.target_net(rollout.obs_next)['Q'].max(1)[0]
-        rollout.discount_rewards(q_next_max.data.cpu().numpy(), gamma=gamma)
+                q_next_max = self.target_net(obs_next)['Q'].max(1)[0]
+
+        target = utils.discount_trajectory(rewards, terms, traj_ends, gamma,
+                                           q_next_max.data.cpu().numpy())
         self.net.zero_grad()
         self.trainable_net.zero_grad()
-        rollout.outputs = self.net(rollout.obs)
+        output = self.net(obs)
         qloss = losses.QLoss(1.0)
         compositor = losses.LossCompositor([qloss])
-        compositor.add(additional_losses)
-        loss = compositor.loss(agent=self, rollouts=rollout)
+        compositor.add(aux_losses)
+        loss = compositor.loss(agent=self, output=output, action=actions,
+                               reward=torch.from_numpy(target).to(self.device),
+                               term=terms, importance=importance)
         loss.backward()
         # torch_utils.clip_grads(self.net, -1, 1)
         torch_utils.copy_grads(from_net=self.net, to_net=self.trainable_net, device=self.device)
         self.opt.step()
-        return rollout
+        return loss, output, target

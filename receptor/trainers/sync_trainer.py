@@ -11,6 +11,7 @@ from receptor.core.schedule import Schedule
 from receptor.core.stats import flush_stats
 from receptor.trainers.trainer import BaseTrainer
 from receptor.utils import torch_utils
+from tensorboardX import SummaryWriter
 
 
 class SyncTrainer(BaseTrainer):
@@ -33,6 +34,7 @@ class SyncTrainer(BaseTrainer):
             test_episodes (int): Number of test episodes. To disable test eval  uation, pass 0.
             test_maxsteps (int): Maximum step allowed during test per episode.
         """
+        self.name = "Sync" + agent.name
         self.agent = agent
         self.maxsteps = maxsteps
         self.batch_size = batch_size
@@ -52,40 +54,38 @@ class SyncTrainer(BaseTrainer):
 
     def train(self):
         """Starts training."""
-        writer = None  # TODO
+        writer = SummaryWriter(self.logdir)
         last_log_time = time.time()
-        lr_schedule = Schedule.create(self.lr_schedule, torch_utils.get_lr(self.agent.opt),
+        lr_schedule = Schedule.create(self.lr_schedule,
+                                      torch_utils.get_lr(self.agent.opt),
                                       self.maxsteps)
         runner = ParallelEnvRunner(agent=self.agent, env=self.envs,
                                    batch_size=self.batch_size)
-        # runner = Runner2(model=self.agent, env=self.envs,
-        #                  nsteps=self.batch_size)
 
         stats = Stats(self.agent)
         try:
             while self.agent.obs_step.value < self.maxsteps:
                 rollout = runner.sample(self.gamma)
-                # rollout = runner.run()
-                self.agent.train_on_batch(rollout,
-                                          lr=lr_schedule.value(self.agent.obs_step.value),
-                                          summarize=False)
+                lr = lr_schedule.value(self.agent.obs_step.value)
+                self.agent.train_on_batch(rollout, lr=lr, summarize=False)
                 stats.add(rollout)
 
                 if time.time() - last_log_time >= self.logfreq:
                     last_log_time = time.time()
-                    flush_stats(stats, name="%s Train" % self.agent.name,
+                    flush_stats(stats, name="%s/Train" % self.name,
                                 maxsteps=self.maxsteps, writer=writer)
                     self.agent.save(self.logdir)
                     self.agent.test(self.test_env,
                                     self.test_episodes,
                                     maxsteps=self.test_maxsteps,
                                     render=self.test_render,
+                                    name="%s/Test" % self.name,
                                     writer=writer)
-                    # writer.flush()
                 if self.render:
                     self.envs.render()
         except KeyboardInterrupt:
             logger.info('Caught Ctrl+C! Stopping training process.')
+        writer.close()
         logger.info('Saving progress & performing evaluation.')
         self.agent.save(self.logdir)
         self.agent.test(self.test_env, self.test_episodes, render=self.test_render)

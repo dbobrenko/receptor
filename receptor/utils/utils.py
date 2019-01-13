@@ -4,7 +4,6 @@ from __future__ import print_function
 
 import cv2
 import numpy as np
-import torch
 
 
 def image_preprocess(obs, resize_width, resize_height, to_gray):
@@ -45,27 +44,26 @@ def discount_rewards_onestep(rewards, gamma, expected_values):
         Discounted rewards.
     """
     assert len(rewards) == len(expected_values)
-    result = rewards.copy() * 0.0
     for i in reversed(range(len(rewards))):
         discount_sum = rewards[i] + gamma * expected_values[i]
-        result[i] = discount_sum
-    return result
+        rewards[i] = discount_sum
+    return rewards
 
 
 def discount_rewards(rewards, gamma, expected_reward=0.0, terminals=None):
     """Applies reward discounting.
 
     Args:
-        rewards (ndarray or tensor): Rewards.
+        rewards (list): Rewards.
         gamma (float): Discount factor.
         expected_reward (float): Expected future reward.
-        terminals (ndarray or tensor): If current transition ends up with terminal state.
+        terminals (list): If current transition ends up with terminal state.
 
     Returns (list):
         Discounted rewards
     """
     discount_sum = expected_reward
-    result = rewards.copy() * 0.0
+    result = np.zeros_like(rewards, dtype='float32')
     if terminals is None:
         terminals = [0] * len(rewards)
     for i in reversed(range(len(rewards))):

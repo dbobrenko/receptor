@@ -2,23 +2,23 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from receptor.core.rollouts import Rollouts, ParallelRollouts
+from receptor.core.rollout import Rollout, RolloutParallel
 from receptor.utils import discount_rewards
 
 
 def test_rollouts():
-    rollouts = Rollouts()
+    rollout = Rollout()
     obs = np.ones((2, 4, 3))
-    for i in range(100):
-        rollouts.add(obs * i, action=5, reward=1, term=False)
-    rollouts.discount_rewards([1.] * 100, gamma=0.5)
-    np.testing.assert_array_equal(rollouts.targets, [1.5] * 100)
+    for i in range(10):
+        rollout.add(obs * i, action=5, reward=1, term=False)
+    rollout.discount_rewards(1., gamma=0.5)
+    expected = [1.99, 1.99, 1.99, 1.99, 1.98, 1.97, 1.94, 1.87, 1.75,  1.50]
+    np.testing.assert_almost_equal(rollout.targets, expected, 2)
 
 
 def test_rollouts_gamma0():
-    # Disc. rewards are manually computed below w/ gamma=0.0
     # Discount test: scipy.signal.lfilter([1.], [1, -gamma], rewards[::-1])[::-1]
-    rollouts = Rollouts()
+    rollouts = Rollout()
     gamma = 0.0
     ntrans = 10
     obs = [np.ones((2, 4, 3)) for _ in range(ntrans)]
@@ -37,10 +37,8 @@ def test_rollouts_gamma0():
 
 
 def test_rollouts_gamma09():
-    # Disc. rewards are manually computed below w/ gamma=0.9
-
     # Trajectory #1
-    rollouts = Rollouts()
+    rollouts = Rollout()
     gamma = 0.9
     ntrans = 5
     obs = [np.ones((5, 5, 1)) for _ in range(ntrans)]
@@ -50,12 +48,12 @@ def test_rollouts_gamma09():
     term = [False, False, False, False, True]
     for o, a, r, t in zip(obs, act, rew, term):
         rollouts.add(o, action=a, reward=r, term=t)
-    rollouts.discount_rewards([1.] * ntrans, gamma=gamma)
+    rollouts.discount_rewards(1., gamma=gamma)
     np.testing.assert_array_almost_equal(rollouts.targets, dr1, 3,
                                          err_msg="Incorrect discounted rewards for multiple"
                                                  "trajectory with len 5, gamma=0.9.")
     # Trajectory #2
-    rollouts = Rollouts()
+    rollouts = Rollout()
     gamma = 0.5
     obs = np.ones((5, 5, 1))
     act = 5
@@ -68,7 +66,7 @@ def test_rollouts_gamma09():
                                                  "trajectory with len 1, gamma=0.9.")
 
     # Trajectory #3
-    rollouts = Rollouts()
+    rollouts = Rollout()
     gamma = 0.9
     ntrans = 8
     obs = [np.ones((5, 5, 1)) for _ in range(ntrans)]
@@ -78,14 +76,14 @@ def test_rollouts_gamma09():
     term = [False, False, False, False, False, False, False, True]
     for o, a, r, t in zip(obs, act, rew, term):
         rollouts.add(o, action=a, reward=r, term=t)
-    rollouts.discount_rewards([1.] * ntrans, gamma=gamma)
+    rollouts.discount_rewards(1., gamma=gamma)
     np.testing.assert_array_almost_equal(rollouts.targets, dr3, 3,
                                          err_msg="Incorrect discounted rewards for multiple"
                                                  "trajectory with len 8, gamma=0.9.")
 
 
 def test_parallel_rollouts():
-    rollouts = ParallelRollouts()
+    rollouts = RolloutParallel()
     gamma = 0.9
     ntrans = 6
     nproc = 4
@@ -119,7 +117,3 @@ def test_parallel_rollouts():
     np.testing.assert_array_almost_equal(rollouts.targets, dr, 3,
                                          err_msg="Incorrect discounted rewards for parallel"
                                                  "transitions w/ gamma=0.9.")
-
-# test_rollouts_gamma0()
-# test_rollouts_gamma09()
-test_parallel_rollouts()

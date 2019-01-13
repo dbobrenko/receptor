@@ -22,15 +22,15 @@ def test_replay_sample():
     for i in range(0, 10*cap, 10):
         replay.add(obs=i, action=i+1, reward=i+2, obs_next=i+10, term=i % 20)
     for _ in range(10):
-        obs, action, reward, term, obs_next, ends, idx, importance = replay.sample()
-        for o, a, r, o_next, t, i in zip(obs, action, reward, obs_next, term, idx):
+        rollout = replay.sample()
+        for o, a, r, o_next, t in zip(rollout.obs, rollout.actions, rollout.rewards,
+                                      rollout.obs_next, rollout.terms):
             assert a - 1 == o
             assert r - 2 == o
             if not t:
                 assert o_next - 10 == o
             assert t == o % 20
-            assert i == o // 10
-    assert len(obs) == batch_size
+        assert len(rollout.obs) == batch_size
 
 
 def test_replay_sample_term():
@@ -39,14 +39,13 @@ def test_replay_sample_term():
     replay = ExperienceReplay(capacity=cap, min_size=cap, batch_size=batch_size)
     for i in range(cap):
         replay.add(obs=i, action=0, reward=0, obs_next=i+1, term=i % 5 == 0)
-    obs, a, r, terms, obs_next, ends, idxs, importance = replay.sample()
-    assert len(obs) == batch_size
-    assert len(obs_next) == batch_size
-    assert len(a) == batch_size
-    assert len(r) == batch_size
-    assert len(terms) == batch_size
-    assert len(idxs) == batch_size
-    for o, o_next, term in zip(obs, obs_next, terms):
+    rollout = replay.sample()
+    assert len(rollout.obs) == batch_size
+    assert len(rollout.obs_next) == batch_size
+    assert len(rollout.actions) == batch_size
+    assert len(rollout.rewards) == batch_size
+    assert len(rollout.terms) == batch_size
+    for o, o_next, term in zip(rollout.obs, rollout.obs_next, rollout.terms):
         if not term:
             assert o+1 == o_next
 
@@ -65,14 +64,14 @@ def test_prop_replay_sample():
     replay = ProportionalReplay(capacity=cap, min_size=cap, batch_size=batch_size, alpha=1, beta=1)
     for i in range(2*cap):
         replay.add(obs=i, action=0, reward=0, obs_next=i+1, term=False, priority=i)
-    obs, a, r, terms, obs_next, ends, idxs, importance = replay.sample()
-    assert len(obs) == batch_size
-    assert len(obs_next) == batch_size
-    assert len(a) == batch_size
-    assert len(r) == batch_size
-    assert len(terms) == batch_size
-    assert len(idxs) == batch_size
-    npt.assert_equal([i+1 for i in obs], obs_next)
+    rollout = replay.sample()
+    assert len(rollout.obs) == batch_size
+    assert len(rollout.obs_next) == batch_size
+    assert len(rollout.actions) == batch_size
+    assert len(rollout.rewards) == batch_size
+    assert len(rollout.terms) == batch_size
+    npt.assert_equal([i+1 for i in rollout.obs],
+                     rollout.obs_next)
 
 
 def test_prop_replay_distribution():
@@ -87,8 +86,8 @@ def test_prop_replay_distribution():
     for o, p in enumerate(priors):
         replay.add(obs=o, action=0, reward=0, obs_next=0, term=False, priority=p)
     for i in range(sample_amount):
-        obs, a, r, terms, obs_next, ends, idxs, importance = replay.sample()
-        for o in obs:
+        rollout = replay.sample()
+        for o in rollout.obs:
             received_priors[o] += 1
     received_priors = np.asarray(received_priors) / (sample_amount*batch_size)
     npt.assert_almost_equal(expected_priors, received_priors, decimal=2)
@@ -107,8 +106,8 @@ def test_prop_replay_update():
         replay.add(obs=o, action=0, reward=0, obs_next=0, term=False)
     replay.update(list(range(len(priors))), priors)
     for i in range(sample_amount):
-        obs, a, r, terms, obs_next, ends, idxs, importance = replay.sample()
-        for o in obs:
+        rollout = replay.sample()
+        for o in rollout.obs:
             received_priors[o] += 1
     received_priors = np.asarray(received_priors) / (sample_amount*batch_size)
     npt.assert_almost_equal(expected_priors, received_priors, decimal=2)

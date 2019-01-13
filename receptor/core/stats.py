@@ -5,8 +5,6 @@ from __future__ import print_function
 import time
 
 import numpy as np
-import tensorflow as tf
-from tensorboardX import SummaryWriter
 from termcolor import colored
 from torch import multiprocessing as mp
 
@@ -42,6 +40,22 @@ def _log_rows(*rows):
 
 def flush_stats(stats, name, log_progress=True, log_rewards=True, log_performance=True,
                 log_hyperparams=True, maxsteps=None, writer=None):
+    """Prints agent's logs into the console and TensorBoard. Made as a separate function,
+    in order to make possible logging from list of Stats (e.g. in A3C agent).
+
+    Args:
+        stats (Stats or list of Stats):
+        name (str): Prefix name, will be used in TensorBoard and terminal logs.
+        log_progress (bool): Enables progress (steps/episodes passed) logging.
+        log_rewards (bool): Enables reward statistics logging.
+        log_performance (bool): Enables performance (fps) logging.
+        log_hyperparams (bool): TODO Enables hyperparameter logging.
+        maxsteps (int): Total training steps. If None, disables progress percentage.
+        writer (tensorboardx.SummaryWriter): Summary writer.
+
+    Returns:
+
+    """
     name = stats.agent.name if name is None else name
     if isinstance(stats, Stats):
         stats = [stats]
@@ -90,33 +104,26 @@ def flush_stats(stats, name, log_progress=True, log_rewards=True, log_performanc
               )
 
     if writer is not None:
-        # TODO
-        v = tf.Summary.Value
-        logs = [v(tag=name+'/TotalEpisodes', simple_value=episodes),
-                v(tag=name+'/ObsPerSec', simple_value=obs_per_sec),
-                v(tag=name+'/OptimizePerSec', simple_value=optim_per_sec),
-                v(tag=name+'/RewardPerStep', simple_value=reward_step)]
+        writer.add_scalar(name+'/TotalEpisodes', episodes, steps)
+        writer.add_scalar(name+'/ObsPerSec', obs_per_sec, steps)
+        writer.add_scalar(name+'/OptimizePerSec', optim_per_sec, steps)
+        writer.add_scalar(name+'/RewardPerStep', reward_step, steps)
         if reward_ep > 0:
-            logs.append(v(tag=name+'/RewardPerEpisode', simple_value=reward_ep))
-        writer.add_summary(tf.Summary(value=logs), global_step=steps)
+            writer.add_scalar(name+'/RewardPerEpisode', reward_ep, steps)
 
 
 class Stats(object):
     def __init__(self, agent, logdir=''):
-        """Statistics recorder.
+        """Stats logger.
 
         Args:
-            tensorboard (bool): If enabled, performs tensorboard logging.
-            episodic (bool): Whether environment is episodic.
-            log_performance (bool): Whether to log performance (obs/sec).
-            name (str): Statistics name.
+            agent (Agent): Agent instance.
         """
         self.agent = agent
         self.reward_stats = RewardStats()
         self.last_time = mp.Value('l', int(time.time()))
         self.last_step = mp.Value('l', self.agent.obs_step.value)
         self.last_optimize = mp.Value('l', self.agent.train_step.value)
-        # self.writer = SummaryWriter(logdir)
 
     def add_rewards(self, rewards, terms, info=None):
         self.reward_stats.add(rewards, terms)
@@ -128,20 +135,7 @@ class Stats(object):
             rollout (Rollout): Rollout.
         """
         # rewards = [info.get('reward_raw', reward) for reward, info in zip(rewards, infos)]
-
-        rewards = rollout.rewards
-        terms = rollout.terms
-        # if rollout.compiled:
-        #     rewards = rewards.cpu().numpy()
-        #     terms = terms.cpu().numpy()
-        self.reward_stats.add(rewards, terms)
-
-        # torch_utils.add_observation_summary(obs, self.env)
-        # writer.add_histogram('agent/action', self.actions)
-        # self.writer.add_scalar('metrics/avg_Q', tf.reduce_mean(self.ev_net['value']))
-        # self.writer.add_scalar('value', tf.reduce_mean(self.net['value']))
-        # if loss:
-        #     self.writer.add_scalar(self.agent.name + '/loss', loss)
+        self.reward_stats.add(rollout.rewards, rollout.terms)
 
     def flush(self, name=None):
         flush_stats(self, name)
@@ -164,7 +158,7 @@ class RewardStats(object):
             reward (float, np.ndarray or list): Reward.
             terminal (bool, np.ndarray or list): Whether the episode was ended.
         """
-        self.step.value += 1
+        self.step.value += np.size(reward)
         self.step_sum.value += np.sum(reward)
         self._running_ep_r.value += np.sum(reward)
         # Episode rewards book keeping
@@ -175,7 +169,7 @@ class RewardStats(object):
             if self._running_ep_r.value > self.episode_max.value:
                 self.episode_max.value = self._running_ep_r.value
             self._running_ep_r.value = 0
-            self.episode.value += 1
+            self.episode.value += np.sum(terminal)
 
     def add_batch(self, reward_batch, terminal_batch):
         """Adds batch with rewards and terminal states (end of episode).
@@ -229,4 +223,3 @@ class RewardStats(object):
         step = self.reset_step_rewards()
         ep = self.reset_episode_rewards()
         return step, ep
-

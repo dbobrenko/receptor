@@ -11,7 +11,9 @@ install_requires = [
     'torch',
     'gym>=0.9.1',
     'six',
-    'opencv-python'
+    'opencv-python',
+    'tensorboard',
+    'tensorboardX'
 ]
 
 extras_require = {

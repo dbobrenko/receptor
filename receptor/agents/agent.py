@@ -14,14 +14,14 @@ from tensorboardX import SummaryWriter
 from torch import multiprocessing as mp
 
 from receptor import logger
-from receptor.core.rollouts import Rollouts
+from receptor.core.rollout import Rollout
 from receptor.core.stats import Stats, flush_stats
 
 
 @six.add_metaclass(abc.ABCMeta)
 class BaseAgent(object):
     @abc.abstractmethod
-    def __init__(self, env, net, device='cuda:0', logdir='', name='', *args, **kwargs):
+    def __init__(self, net, device='cuda:0', logdir='', name='', *args, **kwargs):
         """Abstract base class for Deep Network-based agents.
 
         Args:
@@ -31,7 +31,6 @@ class BaseAgent(object):
             name (str): Agent's name prefix.
         """
         super(BaseAgent, self).__init__()
-        self.env = env
         self.net = net
         self.name = name
         self.logdir = logdir
@@ -41,11 +40,22 @@ class BaseAgent(object):
         self.episode_step = mp.Value('l', 0)
         self.writer = None if logdir is None else SummaryWriter(logdir)
 
-    def train_on_batch(self, obs, actions, rewards, obs_next, trajectory_ends,
-                       term, lr, gamma=0.99, summarize=False):
+    def train_on_batch(self, rollout, lr=None, aux_losses=(), summarize=False, importance=None):
+        """Performs optimization with given rollout batch.
+
+        Args:
+            rollout (core.Rollout): Rollout from environment.
+            lr (float): Learning rate. Pass None to leave constant lr.
+            aux_losses (tuple, list): Auxiliary Losses.
+            summarize (bool): Whether to write logs.
+            importance (list): Importance weight sampling.
+
+        Returns: Loss value.
+        """
         raise NotImplementedError
 
     def predict_on_batch(self, obs_batch):
+        """Computes network output for given batch of observations."""
         raise NotImplementedError
 
     def act(self, obs):
@@ -92,7 +102,8 @@ class BaseAgent(object):
         self.set_state(state)
         logger.info('Agent has been restored from: %s' % checkpoint)
 
-    def test(self, env, episodes, maxsteps=1e5, render=False, fpslimit=None, writer=None):
+    def test(self, env, episodes, maxsteps=1e5, render=False, fpslimit=None, writer=None,
+             name=None):
         """Tests agent's performance on a given number of episodes.
 
         Args:
@@ -102,6 +113,8 @@ class BaseAgent(object):
             render (bool): Enables game screen rendering.
             fpslimit (int): Maximum allowed fps. To disable fps limitation, pass None.
             writer (FileWriter): TensorBoard summary writer.
+            name (str): Log prefix, used in console and TensorBoard logging.
+                If None, 'self.name/Test' is used.
         """
         stats = Stats(agent=self)
         delta_frame = 1. / fpslimit if fpslimit else 0
@@ -130,7 +143,7 @@ class BaseAgent(object):
                         delay = max(0, delta_frame - (time.time() - start_time))
                         time.sleep(delay)
                 if terminal:
-                    # TODO: Check for atari life lost
                     break
+        name = '%s Test' % self.name if None else name
         flush_stats(stats, log_progress=False, log_performance=False, log_hyperparams=False,
-                    name='%s Test' % self.name, writer=writer)
+                    name=name, writer=writer)

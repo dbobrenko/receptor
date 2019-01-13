@@ -5,7 +5,7 @@ from __future__ import print_function
 import torch
 from six.moves import range  # pylint: disable=redefined-builtin
 
-from receptor.core.rollouts import Rollouts, ParallelRollouts
+from receptor.core.rollout import Rollout, RolloutParallel
 
 
 class EnvRunner(object):
@@ -21,11 +21,10 @@ class EnvRunner(object):
         self.env = env
         self.batch_size = batch_size
         self.current_obs = None
-        self.obs_next = None
         self.cache_output = cache_output
 
     def sample(self, gamma=0.99):
-        rollouts = Rollouts()
+        rollouts = Rollout()
         if self.current_obs is None:
             self.current_obs = self.env.reset()
         for i in range(self.batch_size):
@@ -41,13 +40,16 @@ class EnvRunner(object):
             if term:
                 self.current_obs = self.env.reset()
                 break
-        rollouts.obs_next = self.current_obs
+        with torch.no_grad():
+            actions, output = self.agent.explore_on_batch(self.current_obs)
+            expected_values = output['value'].cpu().numpy().squeeze(-1)
+        rollouts.discount_rewards(expected_values, gamma=gamma)
         return rollouts
 
 
 class ParallelEnvRunner(EnvRunner):
     def sample(self, gamma=0.99):
-        rollouts = ParallelRollouts()
+        rollouts = RolloutParallel()
         if self.current_obs is None:
             self.current_obs = self.env.reset()
         for i in range(self.batch_size):
@@ -58,9 +60,13 @@ class ParallelEnvRunner(EnvRunner):
                     act, output = self.agent.explore_on_batch(self.current_obs)
                     output = None
             obs_next, reward, term, info = self.env.step(act)
-            rollouts.add(self.current_obs, act, reward, term, info)
+            rollouts.add(self.current_obs, act, reward, term, output, info)
             self.current_obs = obs_next
-        rollouts.obs_next = self.current_obs
+
+        with torch.no_grad():
+            actions, output = self.agent.explore_on_batch(self.current_obs)
+            expected_values = output['value'].cpu().numpy().squeeze(-1)
+        rollouts.discount_rewards(expected_values, gamma=gamma)
         return rollouts
 
 
@@ -87,4 +93,8 @@ class ReplayRunner(object):
             Batch with replay: (obs, action, reward, terminal, next-obs).
         """
         rollouts = self.replay.sample()
+        with torch.no_grad():
+            actions, output = self.agent.explore_on_batch(rollouts.obs_next)
+            expected_values = output['value'].cpu().numpy().squeeze(-1)
+        rollouts.discount_rewards(expected_values, gamma=gamma)
         return rollouts

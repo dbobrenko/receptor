@@ -8,7 +8,7 @@ import random
 import numpy as np
 from receptor.core.datastruct import SumTree, MinTree
 from receptor import logger
-from receptor.core.rollouts import Rollouts, RolloutsOneStep
+from receptor.core.rollout import Rollout, RolloutOneStep
 
 
 class ExperienceReplay(object):
@@ -52,7 +52,7 @@ class ExperienceReplay(object):
         self._size = min(self._size + 1, self._capacity)
 
     def sample(self):
-        rollouts = RolloutsOneStep()
+        rollouts = RolloutOneStep()
 
         rand_idxs = random.sample(range(self._size), self._batch_size)
         gather = itemgetter(*rand_idxs)
@@ -126,7 +126,7 @@ class ProportionalReplay(ExperienceReplay):
             s = random.uniform(sum_from, sum_to)
             idxs.append(self.sumtree.find_sum_idx(s))
 
-        rollouts = RolloutsOneStep()
+        rollouts = RolloutOneStep()
 
         gather = itemgetter(*idxs)
         rollouts.obs = gather(self._obs)
