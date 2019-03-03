@@ -18,7 +18,7 @@ class SyncTrainer(BaseTrainer):
     def __init__(self, agent, thread_envs, maxsteps, batch_size,
                  logdir, logfreq, log_on_term=True, lr_schedule=None,
                  render=False, test_env=None, test_render=False, gamma=0.99,
-                 test_episodes=1, test_maxsteps=5e5):
+                 test_episodes=1, test_maxsteps=5e4):
         """Creates trainer based on Experience Replay buffer.
 
         Args:
@@ -43,7 +43,7 @@ class SyncTrainer(BaseTrainer):
         self.logfreq = logfreq
         self.log_on_term = log_on_term
         self.render = render
-        self.test_env = agent.env if test_env is None else test_env
+        self.test_env = test_env
         self.test_render = test_render
         self.test_episodes = test_episodes
         self.test_maxsteps = test_maxsteps
@@ -70,25 +70,28 @@ class SyncTrainer(BaseTrainer):
                 self.agent.train_on_batch(rollout, lr=lr, summarize=False)
                 stats.add(rollout)
 
+                if self.render:
+                    self.envs.render()
                 if time.time() - last_log_time >= self.logfreq:
                     last_log_time = time.time()
                     flush_stats(stats, name="%s/Train" % self.name,
                                 maxsteps=self.maxsteps, writer=writer)
                     self.agent.save(self.logdir)
-                    self.agent.test(self.test_env,
-                                    self.test_episodes,
-                                    maxsteps=self.test_maxsteps,
-                                    render=self.test_render,
-                                    name="%s/Test" % self.name,
-                                    writer=writer)
-                if self.render:
-                    self.envs.render()
+
+                    if self.test_env is not None:
+                        self.agent.test(self.test_env,
+                                        self.test_episodes,
+                                        maxsteps=self.test_maxsteps,
+                                        render=self.test_render,
+                                        name="%s/Test" % self.name,
+                                        writer=writer)
         except KeyboardInterrupt:
             logger.info('Caught Ctrl+C! Stopping training process.')
         writer.close()
         logger.info('Saving progress & performing evaluation.')
         self.agent.save(self.logdir)
-        self.agent.test(self.test_env, self.test_episodes, render=self.test_render)
+        if self.test_env is not None:
+            self.agent.test(self.test_env, self.test_episodes, render=self.test_render)
         logger.info('Training finished!')
 
     def save(self):

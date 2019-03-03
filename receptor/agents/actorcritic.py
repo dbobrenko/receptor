@@ -68,8 +68,8 @@ class ActorCritic(BaseAgent):
             self.train_step.value += 1
         with self.obs_step.get_lock():
             self.obs_step.value += len(rollout.obs)
-        # with self.episode_step.get_lock():
-        #     self.episode_step.value += torch.sum(rollout.terms)
+        with self.episode_step.get_lock():
+            self.episode_step.value += np.sum(rollout.terms)
         torch_utils.set_lr(self.opt, lr)
         if importance is not None:
             importance = Variable(

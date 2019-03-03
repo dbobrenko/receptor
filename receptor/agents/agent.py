@@ -109,7 +109,7 @@ class BaseAgent(object):
         Args:
             env (gym.Env): Test environment.
             episodes (int): Number of episodes.
-            maxsteps (int): Maximum allowed step per episode.
+            maxsteps (int): Maximum allowed steps per episode.
             render (bool): Enables game screen rendering.
             fpslimit (int): Maximum allowed fps. To disable fps limitation, pass None.
             writer (FileWriter): TensorBoard summary writer.
@@ -125,7 +125,8 @@ class BaseAgent(object):
             obs = env.reset()
             for i in range(maxsteps):
                 start_time = time.time()
-                action = self.act(obs)
+                with torch.no_grad():
+                    action = self.act(obs)
                 obs, r, terminal, info = env.step(action)
                 step_limit = i >= maxsteps - 1
                 terminal = terminal or step_limit
@@ -134,6 +135,7 @@ class BaseAgent(object):
                                 "maximum allowed number of steps (%d)" % i)
                 step_counter += 1
                 episode_counter += terminal
+                # TODO check fps with every reward log vs. min max mean
                 stats.add_rewards(r, terminal, info)
                 if self.writer is not None:
                     self.writer.add_scalar('test/R', r)
@@ -144,6 +146,5 @@ class BaseAgent(object):
                         time.sleep(delay)
                 if terminal:
                     break
-        name = '%s Test' % self.name if None else name
         flush_stats(stats, log_progress=False, log_performance=False, log_hyperparams=False,
-                    name=name, writer=writer)
+                    name='%s Test' % self.name if None else name, writer=writer)

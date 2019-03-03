@@ -19,8 +19,8 @@ from receptor.trainers import SyncTrainer
 receptor.set_random_seed(555)
 
 
-env_name = "BreakoutNoFrameskip-v4"
-num_act = 4
+env_name = "PongNoFrameskip-v4"
+num_act = 6
 num_stack = 4
 
 
@@ -50,13 +50,11 @@ trainer = SyncTrainer(agent,
                       envs,
                       lr_schedule="linear",
                       maxsteps=80000000,
-                      # maxsteps=800000,
                       batch_size=5,
-                      logdir='/tmp/receptor/A2C/%s' % env_name,
+                      logdir='../../logs/%s/A2C' % env_name,
                       logfreq=120,
                       test_env=make_atari(train=False)(),
                       render=False,
-                      test_render=True
+                      test_render=False
                       )
 trainer.train()
-# agent.test(make_atari(train=False)(), 50, render=True)

@@ -14,11 +14,13 @@ def set_random_seed(seed):
         raise ValueError('Random seed must be an integer value')
     global __RANDOM_SEED__
     __RANDOM_SEED__ = seed
-    random.seed(seed)
-    np.random.seed(seed)
     from gym import spaces
     spaces.prng.seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
     torch.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def get_random_seed():

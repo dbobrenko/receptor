@@ -23,11 +23,30 @@ class Rollout(object):
         self.compiled = False
 
     def _to_tensor(self):
-        self.obs = np.asarray(self.obs, dtype=np.float32)
-        self.obs = np.concatenate(self.obs, 0)
-        self.obs = Variable(torch.from_numpy(self.obs)).to(self.device)
-        self.actions = np.asarray(self.actions, dtype=np.int32).flatten()
-        self.actions = Variable(torch.from_numpy(self.actions)).to(self.device)
+        self.obs = np.asarray(self.obs)
+        if isinstance(self.obs[0], tuple):
+            # Tuple observation detected
+            obs_tuple = []
+            for sub_obs in self.obs.T:
+                sub_obs = torch.tensor(sub_obs).float()
+                obs_tuple.append(Variable(sub_obs).to(self.device))
+            self.obs = tuple(obs_tuple)
+        else:
+            # Single observation
+            self.obs = np.concatenate(self.obs, 0).astype('float32')
+            self.obs = Variable(torch.from_numpy(self.obs)).to(self.device)
+
+        # actions shape BxA
+        if isinstance(self.actions[0], tuple):
+            act_tuple = []
+            for sub_act in self.actions.T:
+                if sub_act is not None:
+                    sub_act = torch.tensor(sub_act).float()
+                    sub_act = Variable(sub_act).to(self.device)
+                act_tuple.append(sub_act)
+            self.actions = tuple(act_tuple)
+        else:
+            self.actions = Variable(torch.from_numpy(self.actions.flatten())).to(self.device)
         self.terms = np.asarray(self.terms, dtype=np.int32)
         self.rewards = np.asarray(self.rewards, dtype=np.float32)
 
@@ -45,7 +64,8 @@ class Rollout(object):
         Returns:
             Flatten discounted rewards for every trajectory.
         """
-        self.obs.append(np.copy(obs))
+        # self.obs.append(np.copy(obs))
+        self.obs.append(obs)
         self.actions.append(action)
         self.rewards.append(reward)
         self.terms.append(term)
@@ -83,11 +103,40 @@ class RolloutOneStep(Rollout):
 
 class RolloutParallel(Rollout):
     def _to_tensor(self):
-        self.obs = np.asarray(self.obs, dtype=np.float32).swapaxes(1, 0)
+        # Batch x Processes x ObsShape => Processes x Batch x ObsShape
+        self.obs = np.asarray(self.obs).swapaxes(1, 0)
+        # Processes x Batch x ObsShape => Processes * Batch x ObsShape
         self.obs = np.concatenate(self.obs, 0)
-        self.obs = Variable(torch.from_numpy(self.obs)).to(self.device)
-        self.actions = np.asarray(self.actions, dtype=np.int32).swapaxes(1, 0).flatten()
-        self.actions = Variable(torch.from_numpy(self.actions)).to(self.device)
+        if isinstance(self.obs[0], tuple):
+            # Tuple observation detected
+            obs_tuple = []
+            # TODO compare performance with self.obs.shape[1]
+            for sub_obs in self.obs.T:
+                if sub_obs is not None:
+                    sub_obs = torch.tensor(sub_obs).float()
+                    sub_obs = Variable(sub_obs).to(self.device)
+                obs_tuple.append(sub_obs)
+            self.obs = tuple(obs_tuple)
+        else:
+            # Single observation
+            self.obs = self.obs.astype('float32')
+            self.obs = Variable(torch.from_numpy(self.obs)).to(self.device)
+
+        # actions shape PxBxA
+        self.actions = np.asarray(self.actions, dtype=np.int32).swapaxes(1, 0)
+        # actions shape P*BxA
+        self.actions = np.concatenate(self.actions, 0)
+        if isinstance(self.actions[0], tuple):
+            act_tuple = []
+            for sub_act in self.actions.T:
+                if sub_act is not None:
+                    sub_act = torch.tensor(sub_act).float()
+                    sub_act = Variable(sub_act).to(self.device)
+                act_tuple.append(sub_act)
+            self.actions = tuple(act_tuple)
+        else:
+            self.actions = Variable(torch.from_numpy(self.actions.flatten())).to(self.device)
+
         self.terms = np.asarray(self.terms, dtype=np.int32).swapaxes(1, 0)
         self.rewards = np.asarray(self.rewards, dtype=np.float32).swapaxes(1, 0)
 

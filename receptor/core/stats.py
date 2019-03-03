@@ -108,7 +108,7 @@ def flush_stats(stats, name, log_progress=True, log_rewards=True, log_performanc
         writer.add_scalar(name+'/ObsPerSec', obs_per_sec, steps)
         writer.add_scalar(name+'/OptimizePerSec', optim_per_sec, steps)
         writer.add_scalar(name+'/RewardPerStep', reward_step, steps)
-        if reward_ep > 0:
+        if reward_ep is not None:
             writer.add_scalar(name+'/RewardPerEpisode', reward_ep, steps)
 
 

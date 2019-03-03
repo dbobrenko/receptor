@@ -22,16 +22,16 @@ receptor.set_random_seed(555)
 env_name = 'CartPole-v0'
 make_env = lambda: GymWrap(gym.make(env_name))
 
-agent = ActorCritic(make_env(),
-                    net=ActorCriticFC(4, 2),
+agent = ActorCritic(net=ActorCriticFC(4, 2),
                     optimizer={'optim': 'adam', 'lr': 0.0005},
                     grad_norm=0.5
                     )
 
-threads = AsyncEnvs([make_env, make_env, make_env, make_env])
+envs = AsyncEnvs([make_env, make_env, make_env, make_env])
 
 trainer = SyncTrainer(agent,
-                      threads,
+                      envs,
+                      test_env=make_env(),
                       lr_schedule="linear",
                       maxsteps=500000,
                       batch_size=20,

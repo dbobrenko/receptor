@@ -11,31 +11,33 @@ from receptor.envs import ObservationStackWrap, ActionRepeatWrap, \
 
 
 class FireResetWrap(gym.Wrapper):
-    def __init__(self, env, fire_action):
+    def __init__(self, env):
         super(FireResetWrap, self).__init__(env=env)
-        assert self.action_space.contains(fire_action),\
-            "Invalid action %s for %s environment." % (fire_action, self.env)
-        self.fire_action = fire_action
+        assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
+        assert len(env.unwrapped.get_action_meanings()) >= 3
 
-    def _reset(self, **kwargs):
+    def reset(self, **kwargs):
         self.env.reset(**kwargs)
-        obs, _, done, _ = self.env.step(self.fire_action)
+        obs, _, done, _ = self.env.step(1)
         if done:
-            obs = self.env.reset(**kwargs)
+            self.env.reset(**kwargs)
+        obs, _, done, _ = self.env.step(2)
+        if done:
+            self.env.reset(**kwargs)
         return obs
 
 
 class AtariLifeReset(FireResetWrap):
     """Starts new episode after Atari live lost.
     Starts each episode from fire_action."""
-    def __init__(self, env, fire_action):
-        super(AtariLifeReset, self).__init__(env=env, fire_action=fire_action)
-        self.env = FireResetWrap(self.env, fire_action=fire_action)
+    def __init__(self, env):
+        super(AtariLifeReset, self).__init__(env=env)
+        self.env = FireResetWrap(self.env)
         assert hasattr(self.env.unwrapped, 'ale')
         self._lives = 0
         self.needs_reset = True
 
-    def _step(self, action):
+    def step(self, action):
         obs, reward, done, info = self.env.step(action)
         self.needs_reset = done
         lives = self.env.unwrapped.ale.lives()
@@ -47,43 +49,65 @@ class AtariLifeReset(FireResetWrap):
         self._lives = lives
         return obs, reward, done, info
 
-    def _reset(self, **kwargs):
+    def reset(self, **kwargs):
         if self.needs_reset:
-            obs = self.env.reset()
-        else:
-            obs, _, _, _ = self.env.step(self.fire_action)
+            self.env.reset()
+        obs, _, done, _ = self.env.step(1)
+        if done:
+            self.env.reset(**kwargs)
+        obs, _, done, _ = self.env.step(2)
+        if done:
+            self.env.reset(**kwargs)
         self._lives = self.env.unwrapped.ale.lives()
         return obs
 
 
 class AtariObsStackLifeReset(gym.Wrapper):
-    """Resets observation stack after Atari live lost.
-    Starts each episode from fire_action."""
-    def __init__(self, env, obs_stack, fire_action):
+    """Resets environment and observation stack after Atari live lost.
+    Starts each episode from fire_action.
+    """
+    def __init__(self, env, obs_stack, life_reset=True):
         super(AtariObsStackLifeReset, self).__init__(env=env)
-        self.live_env = AtariLifeReset(self.env, fire_action=fire_action)
+        # self.life_env = AtariLifeReset(self.env)
         self.env = ObservationStackWrap(self.env, obs_stack)
+        self.needs_reset = True
+        self._lives = 0
+        self._life_reset = life_reset
+        assert hasattr(self.env.unwrapped, 'ale')
+        assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
+        assert len(env.unwrapped.get_action_meanings()) >= 3
 
-    def _step(self, action):
+    def step(self, action):
         # Stack observations
         obs, reward, done, info = self.env.step(action)
-
-        self.live_env.needs_reset = done
+        self.needs_reset = done
         lives = self.env.unwrapped.ale.lives()
         # If live is lost reset episode
         if self._lives > lives > 0:
             info['live_lost'] = True
             if not done:
                 obs = self.env.reset_stack()
+            if self._life_reset:
+                done = True
+            else:
+                obs = self._start_button()
         self._lives = lives
         return obs, reward, done, info
 
-    def _reset(self):
-        if self.live_env.needs_reset:
-            obs = self.env.reset()
-        else:
-            obs, _, _, _ = self.env.step(self.live_env.fire_action)
+    def reset(self, **kwargs):
+        if self.needs_reset:
+            self.env.reset()
+        obs = self._start_button(**kwargs)
         self._lives = self.env.unwrapped.ale.lives()
+        return obs
+
+    def _start_button(self, **kwargs):
+        obs, _, done, _ = self.env.step(1)
+        if done:
+            self.env.reset(**kwargs)
+        obs, _, done, _ = self.env.step(2)
+        if done:
+            self.env.reset(**kwargs)
         return obs
 
 
@@ -116,7 +140,7 @@ class ActionRepeatMaxWrap(ActionRepeatWrap):
 class AtariWrapper(gym.Wrapper):
     def __init__(self,
                  env,
-                 start_action=None,
+                 life_reset=True,
                  noop_action=None,
                  action_repeat=1,
                  obs_stack=4,
@@ -138,14 +162,10 @@ class AtariWrapper(gym.Wrapper):
         self.env = ImageWrap(self.env, to_gray=to_gray, new_width=new_width,
                              new_height=new_height)
         # self.env = NormalizeImageWrap(self.env)
-        if start_action:
-            self.env = AtariObsStackLifeReset(self.env, obs_stack=obs_stack,
-                                              fire_action=start_action)
-        else:
-            self.env = ObservationStackWrap(self.env, obs_stack=obs_stack)
+        self.env = AtariObsStackLifeReset(self.env, obs_stack=obs_stack, life_reset=life_reset)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         self.reward_range = self.env.reward_range
 
-    def _reset(self):
+    def reset(self):
         return self.env.reset()
