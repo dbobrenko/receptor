@@ -2,8 +2,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import datetime
+import os
+
 import cv2
 import numpy as np
+
+import receptor
 
 
 def image_preprocess(obs, resize_width, resize_height, to_gray):
@@ -130,3 +135,23 @@ def onehot(idx, shape):
     vec = np.zeros(shape, dtype=np.uint8)
     vec[idx] = 1
     return vec
+
+
+def timestamp():
+    return datetime.datetime.now().strftime('%Y%m%d-%H-%M-%S')
+
+
+def default_logdir(env_name, agent, logdir=None):
+    """Returns default logdir. Does not creates any directories.
+
+    Args:
+        env_name (str): Environment name.
+        agent (receptor.Agent): Agent instance.
+        logdir (str of None): Base dir for logging. If None, module dir will be used.
+
+    Returns:
+        Logging directory.
+    """
+    if logdir is None:
+        logdir = os.path.join(os.path.dirname(receptor.__file__), '..', 'logs')
+    return os.path.join(logdir, env_name, agent.__class__.__name__, timestamp())

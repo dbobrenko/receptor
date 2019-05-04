@@ -15,6 +15,7 @@ from receptor.networks import ActorCriticFC
 
 from receptor.envs.parallel_envs import AsyncEnvs
 from receptor.trainers import SyncTrainer
+from receptor import utils
 import gym
 
 receptor.set_random_seed(555)
@@ -35,7 +36,7 @@ trainer = SyncTrainer(agent,
                       lr_schedule="linear",
                       maxsteps=500000,
                       batch_size=20,
-                      logdir='/tmp/prl/A2C/%s' % env_name,
+                      logdir=utils.default_logdir(env_name, agent),
                       logfreq=10
                       )
 trainer.train()

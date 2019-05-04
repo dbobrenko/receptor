@@ -2,6 +2,8 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from receptor.utils import utils
+
 try:
     import receptor
 except ImportError:
@@ -27,7 +29,7 @@ num_stack = 4
 def make_atari(train=True):
     return lambda: AtariWrapper(env_name,
                                 obs_stack=1 if train else num_stack,
-                                life_reset=train,
+                                episode_life=train,
                                 new_width=84,
                                 new_height=84,
                                 to_gray=True,
@@ -49,14 +51,14 @@ envs = ParallelFrameStack(envs, num_stack)
 trainer = SyncTrainer(agent,
                       envs,
                       lr_schedule="linear",
-                      maxsteps=80000000,
+                      maxsteps=40000000,
                       # maxsteps=800000,
                       batch_size=5,
-                      logdir='/tmp/receptor/A2C/%s' % env_name,
+                      logdir=utils.default_logdir(env_name, agent),
                       logfreq=120,
                       test_env=make_atari(train=False)(),
                       render=False,
-                      test_render=True
+                      test_render=False
                       )
 trainer.train()
 # agent.test(make_atari(train=False)(), 50, render=True)

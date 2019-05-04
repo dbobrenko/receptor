@@ -140,7 +140,7 @@ class ActionRepeatMaxWrap(ActionRepeatWrap):
 class AtariWrapper(gym.Wrapper):
     def __init__(self,
                  env,
-                 life_reset=True,
+                 episode_life=True,
                  noop_action=None,
                  action_repeat=1,
                  obs_stack=4,
@@ -161,8 +161,8 @@ class AtariWrapper(gym.Wrapper):
             self.env = RewardClipWrap(self.env)
         self.env = ImageWrap(self.env, to_gray=to_gray, new_width=new_width,
                              new_height=new_height)
-        # self.env = NormalizeImageWrap(self.env)
-        self.env = AtariObsStackLifeReset(self.env, obs_stack=obs_stack, life_reset=life_reset)
+        self.env = NormalizeImageWrap(self.env)
+        self.env = AtariObsStackLifeReset(self.env, obs_stack=obs_stack, life_reset=episode_life)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         self.reward_range = self.env.reward_range

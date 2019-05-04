@@ -4,6 +4,8 @@ from __future__ import print_function
 
 import time
 
+from tensorboardX import SummaryWriter
+
 from receptor import logger
 from receptor.core import Stats
 from receptor.core.runner import ParallelEnvRunner
@@ -11,7 +13,6 @@ from receptor.core.schedule import Schedule
 from receptor.core.stats import flush_stats
 from receptor.trainers.trainer import BaseTrainer
 from receptor.utils import torch_utils
-from tensorboardX import SummaryWriter
 
 
 class SyncTrainer(BaseTrainer):
@@ -51,6 +52,7 @@ class SyncTrainer(BaseTrainer):
         self.envs = thread_envs
         self.gamma = gamma
         self.stats = Stats(self.agent)
+        logger.debug("Logging to %s" % self.logdir)
 
     def train(self):
         """Starts training."""

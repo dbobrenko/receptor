@@ -3,6 +3,7 @@ from __future__ import division
 from __future__ import print_function
 
 import abc
+import logging
 import os
 import time
 
@@ -14,14 +15,13 @@ from tensorboardX import SummaryWriter
 from torch import multiprocessing as mp
 
 from receptor import logger
-from receptor.core.rollout import Rollout
 from receptor.core.stats import Stats, flush_stats
 
 
 @six.add_metaclass(abc.ABCMeta)
 class BaseAgent(object):
     @abc.abstractmethod
-    def __init__(self, net, device='cuda:0', logdir='', name='', *args, **kwargs):
+    def __init__(self, net, device='cuda:0', logdir=None, name='', *args, **kwargs):
         """Abstract base class for Deep Network-based agents.
 
         Args:
@@ -39,6 +39,8 @@ class BaseAgent(object):
         self.train_step = mp.Value('l', 0)
         self.episode_step = mp.Value('l', 0)
         self.writer = None if logdir is None else SummaryWriter(logdir)
+        if logdir is not None:
+            logger.addHandler(logging.FileHandler(os.path.join(logdir, 'log.txt')))
 
     def train_on_batch(self, rollout, lr=None, aux_losses=(), summarize=False, importance=None):
         """Performs optimization with given rollout batch.
